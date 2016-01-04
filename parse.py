@@ -2,27 +2,30 @@
 
 import re
 import csv
+import sys
 
 def convert_timetable(read_file_name, write_file_name):
     read_file = open(read_file_name, mode='rt', encoding='utf-8')
     sections = breakdown_file(read_file)
     json_data = "["
     for section in sections:
-        print(section)
+        # print(section)
         timetable = []
         for line in section:
+            line = fix_line_period(line)
             timetable.append(line.strip().split(','))
         temp_json = parse_data(timetable)
         # print(temp_json)
         if not len(json_data) == 0:
             json_data += temp_json
     json_data += "]"
+    json_data = replace_string(json_data)
     write_json(write_file_name, json_data)
     read_file.close()
     print("Conversion Completed!")
 
 
-def breakdown_file(file, ):
+def breakdown_file(file):
     token = '[BREAK]'
     chunks = []
     current_chunk = []
@@ -38,7 +41,19 @@ def breakdown_file(file, ):
     return chunks
 
 
+def replace_string(data):
+    data = re.sub(r'Col', 'Bus run on college days only', data)
+    data = re.sub(r'Chol', 'Bus run on college holidays only', data)
+    return data
+
+
 def parse_data(timetable):
+    print(timetable)
+
+    '''
+        Error here somewhere
+    '''
+
     row = len(timetable)
     col = len(timetable[0])
     add_comma = False
@@ -64,18 +79,71 @@ def parse_data(timetable):
         # if the result is an empty object, then do not include it
         if not temp_data == '{}':
             data += temp_data
+
     # If the last character is , then remove it
     if data[-1] == ',':
         data = data[:-1]
-
     return data
 
 
 def parse_stop_and_time(stop, time):
     if not time.isdigit():
         stop = 'Service'
-
     return '"'+fix_stop(stop)+'":'+'"'+fix_time(time)+'"'
+
+
+def fix_line_period(line):
+    temp = line.split(',')
+    count_1 = len(temp)
+    period_string = ''
+    # has_interval = False
+    start = 0
+    interval = 0
+    end = 0
+
+    for i in range(count_1):
+        if temp[i].isdigit() and len(temp[i]) < 3:
+            if len(period_string) > 0:
+                period_string += ','
+            else:
+                start = i - 1
+
+            period_string += temp[i]
+
+    if len(period_string) > 0:
+        period = period_string.split(',')
+        count_j = len(period)
+        end = start + count_j + 1
+
+        # Loop through all time periods e.g. 12:31 and 13:01
+        for j in range(1,count_j):
+            # Calculate the difference between current time and previous time
+            diff = int(period[j]) - int(period[j-1])
+            if interval == 0:
+                interval = abs(diff)
+            elif interval == abs(diff):
+                pass
+            elif diff < 0 and (diff + 60) != interval:
+                sys.exit("Error: Different intervals, this Script cannot handle this currently...")
+
+        calc_times = cal_interval(int(temp[start]), int(interval), int(temp[end]))
+        line = line.replace(period_string, calc_times)
+
+    return line
+
+
+def cal_interval(start, interval, end):
+    times = ''
+    current_time = start
+
+    while current_time < end:
+        current_time += interval
+        if current_time < end:
+            if (current_time % 100) >= 60:
+                current_time += 40
+            times += str(current_time) + ','
+
+    return times[:-1]
 
 
 def fix_stop(stop):
@@ -99,4 +167,4 @@ def write_json(write_file_name, json):
 
 
 if __name__ == '__main__':
-    convert_timetable('test.csv', 'test.json')
+    convert_timetable('timetable.csv', 'timetable.json')
